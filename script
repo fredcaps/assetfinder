@@ -1,0 +1,156 @@
+#!/usr/bin/env python
+
+import argparse
+import subprocess
+import concurrent.futures
+import requests
+import os
+import time
+import socket
+import shutil
+import zipfile
+from datetime import datetime
+
+# Fonction pour afficher un beau message
+def print_message(message, symbol="*"):
+    print(f"\n{symbol * 10} {message} {symbol * 10}\n")
+
+# Fonction pour exécuter un outil et retourner les résultats
+def run_tool(command, tool_name):
+    try:
+        print_message(f"Lancement de {tool_name} en mode passif...", symbol="=")
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        print_message(f"Fin de {tool_name}", symbol="-")
+        return result.stdout.splitlines()
+    except Exception as e:
+        print(f"Erreur lors de l'exécution de {tool_name} : {str(e)}")
+        return []
+
+# Fonction pour obtenir le code HTTP d'un domaine (timeout de 4 secondes)
+def get_http_code(domain):
+    if not domain or len(domain) > 253:  # Vérifie que le domaine n'est pas vide ni trop long
+        return "N/A"
+    
+    try:
+        response = requests.get(f"http://{domain}", timeout=4)
+        return response.status_code
+    except (requests.RequestException, UnicodeError) as e:
+        print(f"Erreur lors de la requête HTTP pour {domain}: {str(e)}")
+        return "N/A"
+
+# Fonction pour obtenir l'adresse IP d'un sous-domaine avec gestion des erreurs
+def get_ip_address(subdomain):
+    if not subdomain or len(subdomain) > 253:  # Vérifie que le sous-domaine n'est ni vide ni trop long
+        return "N/A"
+    
+    try:
+        ip_address = socket.gethostbyname(subdomain)
+        return ip_address
+    except (socket.gaierror, UnicodeError):
+        return "N/A"
+
+# Vérifie si un sous-domaine appartient bien au domaine principal
+def is_valid_subdomain(domain, subdomain):
+    return subdomain.endswith(f".{domain}") and "*" not in subdomain  # Exclure les wildcards (*)
+
+# Vérifie si un outil est installé en exécutant --version et en capturant la sortie
+def is_tool_installed(tool_name):
+    try:
+        result = subprocess.run([tool_name, "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        return result.returncode == 0
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+# Fonction pour installer les autres outils
+def prompt_install_tool(tool_name):
+    if not is_tool_installed(tool_name):
+        answer = input(f"{tool_name} n'est pas installé. Souhaitez-vous l'installer ? (yes/no): ").lower()
+        if answer in ['yes', 'y']:
+            # Installer l'outil (ex. Findomain, AssetFinder)
+            pass
+
+# Fonction principale de collecte
+def collect_subdomains(domain, tools):
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = {executor.submit(run_tool, tool(domain), tool_name): tool_name for tool_name, tool in tools.items()}
+        subdomains = set()
+        for future in concurrent.futures.as_completed(futures):
+            tool_name = futures[future]
+            try:
+                result = future.result()
+                subdomains.update(result)
+            except Exception as e:
+                print(f"Erreur avec {tool_name}: {str(e)}")
+    return [sub for sub in subdomains if is_valid_subdomain(domain, sub)]
+
+# Fonction pour récupérer le code HTTP et l'IP en parallèle
+def get_http_and_ip(subdomain):
+    http_code = get_http_code(subdomain)
+    ip_address = get_ip_address(subdomain)
+    return subdomain, http_code, ip_address
+
+# Fonction pour filtrer les résultats, récupérer le code HTTP, l'adresse IP, et écrire dans le fichier final
+def filter_and_write_results(subdomains, domain, output_file):
+    unique_subdomains = set(subdomains)
+    
+    with open(output_file, 'a') as f:  # Ouverture en mode ajout pour ne pas écraser
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = {executor.submit(get_http_and_ip, subdomain): subdomain for subdomain in unique_subdomains}
+            
+            for future in concurrent.futures.as_completed(futures):
+                subdomain, http_code, ip_address = future.result()
+                f.write(f"{domain},{subdomain},{http_code},0,{ip_address},{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+
+# Fonction principale du script
+def main():
+    parser = argparse.ArgumentParser(description="Script de reconnaissance en mode passif")
+    parser.add_argument("-d", help="Domaine unique (ex: example.com)")
+    parser.add_argument("-fd", help="Fichier contenant une liste de domaines")
+    args = parser.parse_args()
+
+    # Définir les outils à utiliser en mode passif (amass mis en commentaire)
+    tools = {
+        # "amass": lambda domain: ["amass", "enum", "-passive", "-d", domain],  # Mode passif pour Amass
+        "findomain": lambda domain: ["findomain", "-t", domain],  # Findomain est déjà passif
+        "assetfinder": lambda domain: ["assetfinder", domain]  # AssetFinder est déjà passif
+    }
+
+    # Vérifier et installer les outils si nécessaire
+    for tool in tools.keys():
+        prompt_install_tool(tool)
+
+    # Vérifier si un domaine ou un fichier de domaines est fourni
+    if args.d:
+        domains = [args.d]
+    elif args.fd and os.path.exists(args.fd):
+        with open(args.fd) as f:
+            domains = f.read().splitlines()
+    else:
+        print("Veuillez fournir un domaine avec -d ou un fichier avec -fd.")
+        return
+
+    # Chronométrer l'exécution
+    start_time = time.time()
+
+    # Fichier consolidé pour tous les domaines
+    output_file = f"Scan_du_{datetime.now().strftime('%Y-%m-%d_%H-%M')}_results.txt"
+
+    # Exécuter les outils en parallèle pour chaque domaine
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = {executor.submit(collect_subdomains, domain, tools): domain for domain in domains}
+        
+        for future in concurrent.futures.as_completed(futures):
+            domain = futures[future]
+            try:
+                subdomains = future.result()
+                filter_and_write_results(subdomains, domain, output_file)
+                print(f"Résultats pour {domain} enregistrés dans {output_file}")
+            except Exception as e:
+                print(f"Erreur avec {domain}: {str(e)}")
+
+    # Calculer la durée d'exécution
+    duration = time.time() - start_time
+    print_message(f"Le script s'est terminé en {duration:.2f} secondes.", symbol="#")
+
+if __name__ == "__main__":
+    main()
