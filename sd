@@ -1,0 +1,157 @@
+import argparse
+import subprocess
+import concurrent.futures
+import requests
+import os
+import time
+import socket
+import shutil
+import zipfile
+import re
+from datetime import datetime
+
+# Fonction pour afficher un beau message
+def print_message(message, symbol="*"):
+    print(f"\n{symbol * 10} {message} {symbol * 10}\n")
+
+# Fonction pour exécuter un outil
+def run_tool(command, tool_name):
+    try:
+        print_message(f"Lancement de {tool_name} avec la commande : {' '.join(command)}", symbol="=")
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        print(f"Sortie de {tool_name} :\n{result.stdout}")
+        print_message(f"Fin de {tool_name}", symbol="-")
+        return result.stdout.splitlines()
+    except Exception as e:
+        print(f"Erreur lors de l'exécution de {tool_name} : {str(e)}")
+        return []
+
+# Fonction pour obtenir l'adresse IP d'un sous-domaine avec gestion des erreurs
+def get_ip_address(subdomain):
+    if not subdomain or len(subdomain) > 253:  # Vérifie que le sous-domaine n'est ni vide ni trop long
+        return "N/A"
+    
+    try:
+        ip_address = socket.gethostbyname(subdomain)
+        return ip_address
+    except (socket.gaierror, UnicodeError):
+        return "N/A"
+
+# Fonction pour obtenir le code HTTP d'un domaine avec suivi des redirections et User-Agent, timeout de 4 secondes
+def get_http_code(domain):
+    if not domain or len(domain) > 253:  # Vérifie que le domaine n'est pas vide ni trop long
+        return "N/A"
+    
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'}
+        response = requests.get(f"http://{domain}", headers=headers, allow_redirects=True, timeout=4)
+        return response.status_code
+    except (requests.RequestException, UnicodeError) as e:
+        print(f"Erreur lors de la requête HTTP pour {domain}: {str(e)}")
+        return "N/A"
+
+# Fonction pour vérifier si un sous-domaine appartient bien au domaine principal
+def is_valid_subdomain(subdomain, domain):
+    return subdomain.endswith(f".{domain}") or subdomain == domain
+
+# Fonction principale de collecte avec filtre
+def collect_subdomains(domain, tools):
+    subdomains = set()
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = {executor.submit(run_tool, tool(domain), tool_name): tool_name for tool_name, tool in tools.items()}
+        for future in concurrent.futures.as_completed(futures):
+            tool_name = futures[future]
+            try:
+                result = future.result()
+                print(f"Résultats de {tool_name} : {result}")
+                # Filtrer uniquement les sous-domaines valides du domaine principal
+                for line in result:
+                    if re.match(r'^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', line):
+                        line = line.strip()
+                        if is_valid_subdomain(line, domain):  # Filtre ici
+                            subdomains.add(line)
+            except Exception as e:
+                print(f"Erreur avec {tool_name}: {str(e)}")
+    
+    print(f"Sous-domaines détectés pour {domain} : {subdomains}")
+    return list(subdomains)
+
+# Fonction pour obtenir les détails d'un sous-domaine (IP, HTTP code, etc.)
+def get_subdomain_details(subdomain, domain, scan_time):
+    ip_address = get_ip_address(subdomain)
+    http_code = get_http_code(subdomain)
+    port = 0  # Placeholder for port, future functionality
+    return f"{domain},{subdomain},{http_code},{port},{ip_address},{scan_time}"
+
+# Fonction pour ajouter les détails dans le fichier de sortie avec requêtes simultanées
+def add_full_details(subdomains, output_file, domain):
+    scan_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if not subdomains:
+        print(f"Aucun sous-domaine trouvé pour {domain}.")
+        return
+
+    print(f"Écriture des sous-domaines dans le fichier {output_file}")
+
+    with open(output_file, 'w') as f_out:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = [executor.submit(get_subdomain_details, subdomain, domain, scan_time) for subdomain in subdomains]
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    result = future.result()
+                    f_out.write(result + "\n")
+                except Exception as e:
+                    print(f"Erreur lors de l'obtention des détails du sous-domaine : {str(e)}")
+
+# Fonction pour exécuter les scans en parallèle sur plusieurs domaines
+def process_domain(domain, tools):
+    print_message(f"Traitement du domaine : {domain}")
+    subdomains = collect_subdomains(domain, tools)
+    final_output_file = f"{domain}_final_results.txt"
+
+    # Ajouter les adresses IP, HTTP code, port et heure de scan simultanément
+    add_full_details(subdomains, final_output_file, domain)
+
+    print(f"Résultats pour {domain} enregistrés dans {final_output_file}")
+
+# Fonction principale du script
+def main():
+    parser = argparse.ArgumentParser(description="Script de reconnaissance en mode passif")
+    parser.add_argument("-d", help="Domaine unique (ex: example.com)")
+    parser.add_argument("-fd", help="Fichier contenant une liste de domaines")
+    args = parser.parse_args()
+
+    # Définir les outils à utiliser en mode passif
+    tools = {
+        # "amass": lambda domain: ["amass", "enum", "-passive", "-d", domain],  # Mode passif pour Amass (commenté)
+        "findomain": lambda domain: ["findomain", "-t", domain],  # Findomain est déjà passif
+        "assetfinder": lambda domain: ["assetfinder", domain]  # AssetFinder est déjà passif
+    }
+
+    # Vérifier si un domaine ou un fichier de domaines est fourni
+    if args.d:
+        domains = [args.d]
+    elif args.fd and os.path.exists(args.fd):
+        with open(args.fd) as f:
+            domains = f.read().splitlines()
+    else:
+        print("Veuillez fournir un domaine avec -d ou un fichier avec -fd.")
+        return
+
+    # Chronométrer l'exécution
+    start_time = time.time()
+
+    # Exécuter les scans en parallèle pour chaque domaine
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(process_domain, domain, tools) for domain in domains]
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                print(f"Erreur lors du traitement d'un domaine : {str(e)}")
+
+    # Calculer la durée d'exécution
+    duration = time.time() - start_time
+    print_message(f"Le script s'est terminé en {duration:.2f} secondes.", symbol="#")
+
+if __name__ == "__main__":
+    main()
