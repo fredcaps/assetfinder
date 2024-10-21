@@ -9,8 +9,7 @@ def get_http_code(domain, port):
         url = f"http://{domain}" if port == 80 else f"https://{domain}"
         response = requests.get(url, timeout=4)
         return response.status_code
-    except (requests.RequestException, UnicodeError) as e:
-        print(f"Erreur lors de la requête HTTP pour {domain} sur le port {port}: {str(e)}")
+    except (requests.RequestException, UnicodeError):
         return "N/A"
 
 def get_ip_address(subdomain):
@@ -36,4 +35,5 @@ def get_http_ports_and_ip(subdomain):
             ports.append("80")
         if http_code_443 != "N/A":
             ports.append("443")
+        
         return subdomain, f"{http_code_80}-{http_code_443}", "-".join(ports), ip_address
