@@ -1,16 +1,26 @@
-import subprocess
+import subprocess 
 import concurrent.futures
-from utils import print_message
 
 def run_tool(command, tool_name):
     try:
-        print_message(f"Lancement de {tool_name} en mode passif...", symbol="=")
         result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        print_message(f"Fin de {tool_name}", symbol="-")
         return result.stdout.splitlines()
     except Exception as e:
-        print(f"Erreur lors de l'exécution de {tool_name} : {str(e)}")
         return []
+
+def clean_subdomain(subdomain, domain):
+    """
+    Nettoie les sous-domaines et vérifie qu'ils appartiennent bien au domaine principal.
+    """
+    if " --> " in subdomain:
+        subdomain = subdomain.split(" --> ")[-1]  # Ne garder que la dernière partie du sous-domaine
+
+    subdomain = subdomain.strip()
+
+    if subdomain.endswith(f".{domain}") or subdomain == domain:
+        return subdomain
+    else:
+        return None
 
 def collect_subdomains(domain, tools):
     with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -20,7 +30,11 @@ def collect_subdomains(domain, tools):
             tool_name = futures[future]
             try:
                 result = future.result()
-                subdomains.update(result)
+                for subdomain in result:
+                    cleaned_subdomain = clean_subdomain(subdomain, domain)
+                    if cleaned_subdomain:
+                        subdomains.add(cleaned_subdomain)
             except Exception as e:
-                print(f"Erreur avec {tool_name}: {str(e)}")
+                pass
+    
     return list(subdomains)
