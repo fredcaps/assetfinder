@@ -1,4 +1,4 @@
-# Tutoriel : Installation des Outils pour le Projet
+# Tutoriel : Installation des Outils et Modules pour le Projet
 
 ## 1. Mise à Jour du Système
 
@@ -14,9 +14,11 @@ Vous devez installer Python ainsi que le gestionnaire de paquets `pip` :
 
 > sudo apt install python3 python3-pip -y
 
-Ensuite, installez la bibliothèque `requests` :
+Ensuite, installez les bibliothèques Python requises :
 
-> pip install requests
+> pip install psycopg2-binary pytz
+
+Ces bibliothèques sont nécessaires pour les connexions à la base de données et la gestion des fuseaux horaires.
 
 ---
 
@@ -34,7 +36,7 @@ Téléchargez et installez Findomain avec les commandes suivantes :
 
 ### 3.2. Installation de Subfinder
 
-Assurez-vous d'avoir installé Go avant d'exécuter cette commande. Si Go n'est pas installé, utilisez la commande suivante :
+Assurez-vous d'avoir Go installé. Sinon, utilisez la commande suivante :
 
 > sudo apt install golang-go -y
 
@@ -44,29 +46,19 @@ Ensuite, installez Subfinder :
 
 ---
 
-### 3.3. Installation de Amass
+### 3.3. Installation d'Assetfinder
 
-Pour installer Amass, utilisez la commande suivante :
+Installez Assetfinder avec la commande suivante :
+
+> go install github.com/tomnomnom/assetfinder@latest
+
+---
+
+### 3.4. Installation de Amass
+
+Installez Amass avec la commande suivante :
 
 > sudo apt install amass -y
-
----
-
-### 3.4. Installation de Httprobe
-
-Installez Httprobe avec la commande suivante :
-
-> go install github.com/tomnomnom/httprobe@latest
-
----
-
-### 3.5. Installation de Aquatone
-
-Pour capturer des captures d'écran des sous-domaines, installez Aquatone avec les commandes suivantes :
-
-> wget https://github.com/michenriksen/aquatone/releases/download/v1.7.0/aquatone_linux_amd64_1.7.0.zip  
-> unzip aquatone_linux_amd64_1.7.0.zip  
-> sudo mv aquatone /usr/local/bin/
 
 ---
 
@@ -76,32 +68,18 @@ Après avoir installé chaque outil, vérifiez que tout fonctionne correctement 
 
 > findomain --version  
 > subfinder --version  
-> amass -version  
-> httprobe --version  
-> aquatone --version
+> assetfinder --version  
+> amass -version
 
 ---
 
 ## 5. Exécution du Script Principal
 
-Une fois les outils installés, vous pouvez exécuter le script principal avec la commande suivante :
+Une fois les outils et modules installés, vous pouvez exécuter le script principal avec la commande suivante :
 
 > python3 main.py
 
 ---
 
-## 6. Remarques Supplémentaires
 
-Si un outil ne s'exécute pas correctement, assurez-vous que les permissions sont correctement configurées. Vous pouvez utiliser la commande suivante pour corriger les permissions :
-
-> chmod +x [nom_de_l'outil]
-
-Vous pouvez également créer un environnement virtuel pour isoler les dépendances Python avec les commandes suivantes :
-
-> python3 -m venv venv  
-> source venv/bin/activate  
-> pip install -r requirements.txt
-
----
-
-Ce guide vous permet d'installer et de configurer tous les outils nécessaires pour le bon fonctionnement de votre projet. Si des ajustements sont nécessaires, assurez-vous de vérifier les configurations spécifiques dans vos fichiers Python.
+Ce guide vous permet d'installer et de configurer les outils et modules nécessaires pour le bon fonctionnement.
