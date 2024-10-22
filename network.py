@@ -37,3 +37,4 @@ def get_http_ports_and_ip(subdomain):
             ports.append("443")
         
         return subdomain, f"{http_code_80}-{http_code_443}", "-".join(ports), ip_address
+

@@ -38,3 +38,4 @@ def collect_subdomains(domain, tools):
                 pass
     
     return list(subdomains)
+

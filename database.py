@@ -6,9 +6,9 @@ import argparse
 def connect_db():
     try:
         connection = psycopg2.connect(
-            database=os.getenv("DB_NAME", "scans"),        # Nom de la base de données
-            user=os.getenv("DB_USER", "scanner"),          # Nom d'utilisateur PostgreSQL
-            password=os.getenv("DB_PASSWORD", "password"), # Mot de passe PostgreSQL
+            database=os.getenv("DB_NAME", "test_scans2"),        # Nom de la base de données
+            user=os.getenv("DB_USER", "test_scanner2"),          # Nom d'utilisateur PostgreSQL
+            password=os.getenv("DB_PASSWORD", "test"), # Mot de passe PostgreSQL
             host=os.getenv("DB_HOST", "localhost"),        # Adresse du serveur PostgreSQL
             port=os.getenv("DB_PORT", "5432")              # Port PostgreSQL
         )
@@ -25,7 +25,7 @@ def get_next_scan_id():
 
     try:
         cursor = connection.cursor()
-        cursor.execute("SELECT MAX(scan_id) FROM scan_results")
+        cursor.execute("SELECT MAX(scan_id) FROM scan_results2")
         result = cursor.fetchone()
         connection.close()
 
@@ -45,7 +45,7 @@ def insert_scan_result(scan_id, domain, subdomain, http_codes, ports, ip_address
     try:
         cursor = connection.cursor()
         cursor.execute("""
-            INSERT INTO scan_results (scan_id, domain, subdomain, http_codes, ports, ip_address, scan_time)
+            INSERT INTO scan_results2 (scan_id, domain, subdomain, http_codes, ports, ip_address, scan_time)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (scan_id, domain, subdomain, http_codes, ports, ip_address, scan_time))
 
